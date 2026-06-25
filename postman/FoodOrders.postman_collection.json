@@ -1,0 +1,356 @@
+{
+  "info": {
+    "name": "Food Orders API",
+    "description": "Complete collection for the Food Orders REST API backed by Azure Cosmos DB.\n\nSet the `baseUrl` variable before running. After creating an order, copy its `id` into `orderId`. After creating an item, copy its `id` into `itemId`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "food-orders-api-collection-v1"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the running API"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string",
+      "description": "Set this after creating an order"
+    },
+    {
+      "key": "itemId",
+      "value": "",
+      "type": "string",
+      "description": "Set this after creating an order item"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Liveness check — returns 200 OK when the service is running."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('orderId', body.id);",
+                  "    pm.test('Order created', () => pm.response.to.have.status(201));",
+                  "    pm.test('Id assigned', () => pm.expect(body.id).to.match(/^ORD-/));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"CUST-1001\",\n  \"customerName\": \"John Smith\",\n  \"customerEmail\": \"john.smith@email.com\",\n  \"status\": \"Pending\",\n  \"totalAmount\": 35.97,\n  \"currency\": \"USD\",\n  \"deliveryAddress\": {\n    \"street\": \"123 Main Street\",\n    \"city\": \"Seattle\",\n    \"state\": \"WA\",\n    \"zipCode\": \"98101\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", ""]
+            },
+            "description": "Create a new order. The response id is automatically saved to the `orderId` collection variable."
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Orders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", ""]
+            },
+            "description": "Returns all orders sorted by orderDate descending."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order by Id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has order key', () => pm.expect(body).to.have.property('order'));",
+                  "pm.test('Has items key', () => pm.expect(body).to.have.property('items'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}"]
+            },
+            "description": "Returns the order plus all its child items in one response."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status updated', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('Confirmed');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Confirmed\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}"]
+            },
+            "description": "Partial update — only fields included are modified."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}"]
+            },
+            "description": "Deletes the order AND all child items (cascade delete)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Order Items",
+      "item": [
+        {
+          "name": "Create Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('itemId', body.id);",
+                  "    pm.test('Item created', () => pm.response.to.have.status(201));",
+                  "    pm.test('Id assigned', () => pm.expect(body.id).to.match(/^ITEM-/));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemName\": \"Chicken Caesar Salad\",\n  \"quantity\": 1,\n  \"pricePerItem\": 10.99,\n  \"calories\": 450,\n  \"protein\": 35,\n  \"carbohydrates\": 20,\n  \"fat\": 15,\n  \"allergies\": [\"Milk\", \"Egg\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", ""]
+            },
+            "description": "Add an item to an existing order. The response id is saved to `itemId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Items for Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Returns array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", ""]
+            },
+            "description": "List all items belonging to the given order."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has orderId', () => pm.expect(pm.response.json()).to.have.property('orderId'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}"]
+            },
+            "description": "Return one specific item by its id."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Quantity updated', () => {",
+                  "    pm.expect(pm.response.json().quantity).to.equal(2);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}"]
+            },
+            "description": "Partial update for a single item."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Item",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}"]
+            },
+            "description": "Delete one item without affecting the parent order or sibling items."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
