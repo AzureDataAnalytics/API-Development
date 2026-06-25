@@ -10,7 +10,7 @@ Three model layers:
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,31 @@ class OrderItemCreate(BaseModel):
     carbohydrates: float = Field(..., ge=0, examples=[20.0])
     fat: float = Field(..., ge=0, examples=[15.0])
     allergies: List[str] = Field(default=[], examples=[["Milk", "Egg"]])
+    # Set automatically by the image upload endpoint — not supplied by callers on create
+    imageUrl: Optional[str] = Field(default=None, description="Public blob URL, set via the /image endpoints")
+
+
+class ImageFileUpload(BaseModel):
+    """Metadata returned after a successful image upload."""
+
+    itemId: str
+    imageUrl: str
+    format: Literal["file", "base64"]
+
+
+class ImageBase64Payload(BaseModel):
+    """Request body for the base64 upload endpoint."""
+
+    image_base64: str = Field(
+        ...,
+        description="Raw base64-encoded image bytes (no data-URI prefix needed)",
+        examples=["iVBORw0KGgoAAAANSUhEUgAA..."],
+    )
+    filename: str = Field(
+        ...,
+        description="Original filename including extension (.jpg / .png)",
+        examples=["pepperoni-pizza.jpg"],
+    )
 
 
 class OrderItemUpdate(BaseModel):

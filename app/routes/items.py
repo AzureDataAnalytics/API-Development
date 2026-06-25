@@ -8,10 +8,14 @@ callers get a meaningful 404 rather than an empty list.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 
-from app.models.order_item import OrderItemCreate, OrderItemUpdate
+from app.models.order_item import ImageBase64Payload, ImageFileUpload, OrderItemCreate, OrderItemUpdate
+from app.services.blob_service import BlobService, get_blob_service
 from app.services.cosmos_service import CosmosService, get_cosmos_service
+
+_ALLOWED_MIME = {"image/jpeg", "image/png"}
+_ALLOWED_EXT = {".jpg", ".jpeg", ".png"}
 
 router = APIRouter(prefix="/api/orders/{order_id}/items", tags=["Order Items"])
 
@@ -125,4 +129,123 @@ def delete_item(
     """
     if not cosmos.delete_item(order_id, item_id):
         raise _item_404(order_id, item_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ── Image endpoints ───────────────────────────────────────────────────────────
+
+
+@router.put(
+    "/{item_id}/image",
+    summary="Upload item image — JPG or PNG file (multipart)",
+    tags=["Item Images"],
+)
+async def upload_image_file(
+    order_id: str,
+    item_id: str,
+    file: UploadFile = File(..., description="JPG or PNG image, max 8 MB"),
+    cosmos: CosmosService = Depends(get_cosmos_service),
+    blob: BlobService = Depends(get_blob_service),
+) -> ImageFileUpload:
+    """
+    Upload a JPG or PNG image for this item via **multipart/form-data**.
+
+    - Replaces any previously stored image (old blob is deleted automatically)
+    - Stores the public URL in the `imageUrl` field of the item document
+    - Returns the new `imageUrl` alongside the `itemId`
+
+    **Postman tip:** Body → form-data → key `file` (type = File)
+    """
+    item = cosmos.get_item(order_id, item_id)
+    if item is None:
+        raise _item_404(order_id, item_id)
+
+    # Validate content type
+    if file.content_type not in _ALLOWED_MIME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": f"Unsupported file type '{file.content_type}'. Use image/jpeg or image/png."},
+        )
+
+    file_bytes = await file.read()
+
+    # Remove old blob if one exists
+    if item.get("imageUrl"):
+        blob.delete_image(item["imageUrl"])
+
+    try:
+        image_url = blob.upload_file(item_id, file_bytes, file.filename or "image.jpg")
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": str(exc)})
+
+    cosmos.update_item(order_id, item_id, {"imageUrl": image_url})
+    return ImageFileUpload(itemId=item_id, imageUrl=image_url, format="file")
+
+
+@router.put(
+    "/{item_id}/image/base64",
+    summary="Upload item image — base64-encoded JSON body",
+    tags=["Item Images"],
+)
+def upload_image_base64(
+    order_id: str,
+    item_id: str,
+    payload: ImageBase64Payload,
+    cosmos: CosmosService = Depends(get_cosmos_service),
+    blob: BlobService = Depends(get_blob_service),
+) -> ImageFileUpload:
+    """
+    Upload a JPG or PNG image encoded as a **base64 string** in a JSON body.
+
+    ```json
+    {
+      "image_base64": "<base64 string>",
+      "filename": "pepperoni-pizza.jpg"
+    }
+    ```
+
+    A `data:image/...;base64,` prefix is accepted but not required.
+    Replaces any previously stored image.
+    """
+    item = cosmos.get_item(order_id, item_id)
+    if item is None:
+        raise _item_404(order_id, item_id)
+
+    # Remove old blob if one exists
+    if item.get("imageUrl"):
+        blob.delete_image(item["imageUrl"])
+
+    try:
+        image_url = blob.upload_base64(item_id, payload.image_base64, payload.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": str(exc)})
+
+    cosmos.update_item(order_id, item_id, {"imageUrl": image_url})
+    return ImageFileUpload(itemId=item_id, imageUrl=image_url, format="base64")
+
+
+@router.delete(
+    "/{item_id}/image",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove an item's image",
+    tags=["Item Images"],
+)
+def delete_item_image(
+    order_id: str,
+    item_id: str,
+    cosmos: CosmosService = Depends(get_cosmos_service),
+    blob: BlobService = Depends(get_blob_service),
+) -> Response:
+    """
+    Delete the image blob from storage and clear `imageUrl` on the item document.
+    Returns 204 No Content. Safe to call even if no image is set.
+    """
+    item = cosmos.get_item(order_id, item_id)
+    if item is None:
+        raise _item_404(order_id, item_id)
+
+    if item.get("imageUrl"):
+        blob.delete_image(item["imageUrl"])
+        cosmos.update_item(order_id, item_id, {"imageUrl": None})
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)

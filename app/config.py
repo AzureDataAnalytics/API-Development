@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     orders_container: str = "orders"
     order_items_container: str = "orderitems"
 
+    # Azure Blob Storage — item images
+    storage_connection_string: str
+    storage_image_container: str = "item-images"
+
     model_config = {"env_file": ".env"}
 
 
