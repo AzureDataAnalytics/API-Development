@@ -23,6 +23,12 @@
       "value": "",
       "type": "string",
       "description": "Set this after creating an order item"
+    },
+    {
+      "key": "imageUrl",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically after a successful image upload"
     }
   ],
   "item": [
@@ -349,6 +355,193 @@
             "description": "Delete one item without affecting the parent order or sibling items."
           },
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Item Images",
+      "description": "Upload and remove images for food items (Pizza, Burgers, etc.).\n\nImages are stored in Azure Blob Storage (container: item-images, public read).\nThe public URL is written back into the item document's `imageUrl` field.\n\nTwo upload methods:\n  • File upload  — multipart/form-data, field key: `file`\n  • Base64 upload — JSON body with `image_base64` and `filename`\n\nMax size: 8 MB. Accepted formats: JPEG, PNG.\nReplacing an image automatically deletes the previous blob.",
+      "item": [
+        {
+          "name": "Upload Image — File (multipart)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('imageUrl', body.imageUrl);",
+                  "    pm.test('imageUrl returned', () => pm.expect(body.imageUrl).to.include('blob.core.windows.net'));",
+                  "    pm.test('format is file', () => pm.expect(body.format).to.equal('file'));",
+                  "    pm.test('itemId matches', () => pm.expect(body.itemId).to.equal(pm.collectionVariables.get('itemId')));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Select a JPG or PNG image (max 8 MB). In Postman: set key type to 'File' then pick your image."
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}", "image"]
+            },
+            "description": "Upload a JPG or PNG image for this item via **multipart/form-data**.\n\nHow to use in Postman:\n1. Go to Body → form-data\n2. Set the key to `file`\n3. Click the dropdown on the right of the key field and choose **File**\n4. Click **Select Files** and pick a `.jpg` or `.png`\n5. Send\n\nThe old image (if any) is automatically deleted before the new one is stored.\nThe returned `imageUrl` is saved to the `imageUrl` collection variable."
+          },
+          "response": [
+            {
+              "name": "200 OK — image uploaded",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/a3f9c1b2d4e5-pepperoni-pizza.jpg\",\n  \"format\": \"file\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 Bad Request — wrong file type",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Unsupported file type 'image/gif'. Use image/jpeg or image/png.\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "404 Not Found — item missing",
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Item 'ITEM-20101' not found in order 'ORD-10101'\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "Upload Image — Base64 (JSON)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('imageUrl', body.imageUrl);",
+                  "    pm.test('imageUrl returned', () => pm.expect(body.imageUrl).to.include('blob.core.windows.net'));",
+                  "    pm.test('format is base64', () => pm.expect(body.format).to.equal('base64'));",
+                  "    pm.test('itemId matches', () => pm.expect(body.itemId).to.equal(pm.collectionVariables.get('itemId')));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_base64\": \"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI6QAAAABJRU5ErkJggg==\",\n  \"filename\": \"pizza-thumbnail.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}/image/base64",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}", "image", "base64"]
+            },
+            "description": "Upload a JPG or PNG image encoded as a base64 string in a JSON body.\n\nThe sample body contains a real 1×1 PNG (valid for smoke-testing).\n\nTo use your own image:\n  • Mac/Linux: `base64 -i my-image.jpg`\n  • Windows PowerShell:\n    `[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\\Images\\pizza.jpg'))`\n\nPaste the result as the `image_base64` value and set `filename` to the\noriginal filename (extension determines the stored content-type).\n\nA browser data-URI prefix (`data:image/png;base64,...`) is accepted — the\nAPI strips it automatically. The returned `imageUrl` is saved to `imageUrl`\ncollection variable."
+          },
+          "response": [
+            {
+              "name": "200 OK — image uploaded",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/7e2a9f13b8c4-pizza-thumbnail.png\",\n  \"format\": \"base64\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 Bad Request — invalid base64",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Invalid base64 string: Invalid base64-encoded string\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "400 Bad Request — decoded bytes not a valid image",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Unsupported image format — only JPEG and PNG are accepted\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
+        {
+          "name": "Delete Image",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));",
+                  "if (pm.response.code === 204) {",
+                  "    pm.collectionVariables.set('imageUrl', '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}", "image"]
+            },
+            "description": "Remove the image blob from Azure Blob Storage and set `imageUrl` to null on the item document.\n\nReturns 204 No Content — no response body.\nSafe to call even when the item has no image; 204 is returned in both cases.\n\nThe `imageUrl` collection variable is cleared on success."
+          },
+          "response": [
+            {
+              "name": "204 No Content — image removed",
+              "status": "No Content",
+              "code": 204,
+              "header": [],
+              "body": "",
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "name": "404 Not Found — item missing",
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Item 'ITEM-20101' not found in order 'ORD-10101'\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
         }
       ]
     }
