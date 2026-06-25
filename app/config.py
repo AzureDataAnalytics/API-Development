@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     storage_connection_string: str
     storage_image_container: str = "item-images"
 
+    # Authentication — Option 1: API Keys
+    # Comma-separated list of valid keys. App refuses to start if unset.
+    # Generate a key: python -c "import secrets; print(secrets.token_hex(32))"
+    api_keys: str
+
     model_config = {"env_file": ".env"}
 
 

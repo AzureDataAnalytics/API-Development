@@ -1,9 +1,17 @@
 {
   "info": {
     "name": "Food Orders API",
-    "description": "Complete collection for the Food Orders REST API backed by Azure Cosmos DB.\n\nSet the `baseUrl` variable before running. After creating an order, copy its `id` into `orderId`. After creating an item, copy its `id` into `itemId`.",
+    "description": "Complete collection for the Food Orders REST API backed by Azure Cosmos DB.\n\n## Authentication\nAll endpoints except GET /health require an API key.\nSet the `apiKey` collection variable to your key — it is sent automatically\nas the `X-API-Key` header on every request via the collection-level Auth setting.\n\n## Setup\n1. Set `baseUrl` (default: http://localhost:8000)\n2. Set `apiKey` to your key from the API_KEYS .env value\n3. Run Health Check to confirm connectivity\n4. Create an Order — `orderId` is captured automatically\n5. Create an Item — `itemId` is captured automatically",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_postman_id": "food-orders-api-collection-v1"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key",   "value": "X-API-Key",   "type": "string" },
+      { "key": "value", "value": "{{apiKey}}",   "type": "string" },
+      { "key": "in",    "value": "header",       "type": "string" }
+    ]
   },
   "variable": [
     {
@@ -13,16 +21,22 @@
       "description": "Base URL of the running API"
     },
     {
+      "key": "apiKey",
+      "value": "2a9785e01fe42f8f78773b0c0710e2bd3155b8dd73bcfd6ef26eea0bd140d52a",
+      "type": "string",
+      "description": "API key — sent as X-API-Key header on every request. Rotate by updating this variable."
+    },
+    {
       "key": "orderId",
       "value": "",
       "type": "string",
-      "description": "Set this after creating an order"
+      "description": "Set automatically after creating an order"
     },
     {
       "key": "itemId",
       "value": "",
       "type": "string",
-      "description": "Set this after creating an order item"
+      "description": "Set automatically after creating an order item"
     },
     {
       "key": "imageUrl",
