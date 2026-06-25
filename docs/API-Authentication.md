@@ -2,9 +2,13 @@
 
 ## Overview
 
-The Food Orders API currently has no authentication layer — any caller with network access can read
-or modify orders and items. This document covers four authentication strategies, compares their
-trade-offs, and documents the implementation that is currently active.
+The Food Orders API uses **API Key authentication** backed by **Azure Key Vault** for secret
+storage. All endpoints except `GET /health` require an `X-API-Key` header. Keys are stored as
+named secrets in Key Vault — each client gets its own key so individual clients can be revoked
+without affecting others.
+
+This document covers the active implementation, Key Vault setup, key management, and three
+additional authentication strategies available for future adoption.
 
 ---
 
@@ -30,36 +34,76 @@ trade-offs, and documents the implementation that is currently active.
 
 ### How it works
 
-Every API caller includes a secret key in the `X-API-Key` request header. The API validates the
-key against a set of known keys stored in the `.env` file (or Azure Key Vault in production). If
-the key is missing or not recognised the request is rejected with `401 Unauthorized`.
+Every API caller includes a secret key in the `X-API-Key` request header. The API fetches the
+set of valid keys from **Azure Key Vault** at startup and caches them in memory. If the key is
+missing or unrecognised the request is rejected with `401 Unauthorized`.
 
 ```
-Client ──► GET /api/orders/   ──► FastAPI reads X-API-Key header
+                    ┌─ Azure Key Vault ──────────────────┐
+                    │  api-key-admin     → <64-char hex> │
+                    │  api-key-client1   → <64-char hex> │
+                    │  api-key-client2   → <64-char hex> │  fetched once at startup
+                    │  api-key-mobile    → <64-char hex> │  cached in memory
+                    │  api-key-reporting → <64-char hex> │
+                    └────────────────────────────────────┘
+                              ↓
+Client ──► GET /api/orders/   ──► FastAPI checks X-API-Key against cached set
            X-API-Key: <key>        │
-                                   ├── Key valid?  ──► 200 OK
-                                   └── Key missing / wrong ──► 401 Unauthorized
+                                   ├── Key in set  ──► 200 OK
+                                   └── Missing / wrong ──► 401 Unauthorized
 ```
+
+### Azure Key Vault details
+
+| Property | Value |
+|---|---|
+| Vault name | `kv-foodorders-dev` |
+| Vault URL | `https://kv-foodorders-dev.vault.azure.net/` |
+| Resource group | `rg-foodorders-dev` |
+| Region | East US |
+| SKU | Standard |
+| Access model | Azure RBAC (`Key Vault Secrets Officer` for admin, `Key Vault Secrets User` for the app) |
+| Secret naming convention | `api-key-<client>` — every secret with this prefix is treated as a valid key |
+
+### Active API Keys
+
+> **Security note:** These keys are shown here for handover purposes only.
+> In production, distribute keys directly to each client and never commit them to source control.
+
+| Secret Name | Client | Key Value |
+|---|---|---|
+| `api-key-admin` | Admin / internal tooling | `a88b5efd53c98b9d3838e2a14273dac5d36bdeeec8a9024f31a0335f3e046394` |
+| `api-key-client1` | Client Application 1 | `ba58c056d4ffa7a6427e6796f288ea257a56fbb464e3f57529d4fb5e7a9344f6` |
+| `api-key-client2` | Client Application 2 | `da8e9ccdbbc064662e90556509b696196a462e71ed1b575170438af5543bf478` |
+| `api-key-mobile` | Mobile App | `ff1f807fe7448ba947bed382b7d5bab5b254819b20afec63f7b7d17260cd6b10` |
+| `api-key-reporting` | Reporting / Analytics Service | `92118bc8521c162e083eb32ba6c8826eb16752d3ad2111cb7a6c42df4cda48d5` |
 
 ### Implementation details
 
 | Component | File | Purpose |
 |---|---|---|
-| Key storage | `.env` → `API_KEYS` | Comma-separated list of valid keys |
-| Validation dependency | `app/dependencies/auth.py` | FastAPI `Security()` dependency |
-| Applied to | All routes except `GET /health` | Routers receive `dependencies=[Depends(require_api_key)]` |
-| Swagger UI | `http://localhost:8000/docs` | "Authorize" button accepts the key |
+| Key Vault URL | `.env` → `AZURE_KEYVAULT_URL` | Points to the vault at startup |
+| Key loading | `app/dependencies/auth.py` → `_load_valid_keys()` | Fetches `api-key-*` secrets; cached via `lru_cache` |
+| Azure credential | `DefaultAzureCredential` | Azure CLI locally; Managed Identity on Azure |
+| Validation dependency | `app/dependencies/auth.py` → `require_api_key` | FastAPI `Security()` dependency |
+| Applied to | All routes except `GET /health` | `app.include_router(..., dependencies=[Depends(require_api_key)])` |
+| Local dev fallback | `API_KEYS` env var | Used when `AZURE_KEYVAULT_URL` is not set |
+| Swagger UI | `http://localhost:8000/docs` | "Authorize" button — enter any valid key |
 
 ### Configuration
 
-Add keys to `.env` (comma-separated — multiple keys allow per-client revocation):
-
+**.env (production)**
 ```env
-API_KEYS=2a9785e01fe42f8f78773b0c0710e2bd3155b8dd73bcfd6ef26eea0bd140d52a,3878411538ce0195cedb306b79a526d5daba65f96709867fb54e7311abee41d1
+AZURE_KEYVAULT_URL=https://kv-foodorders-dev.vault.azure.net/
 ```
 
-Generate a new key any time with:
+**.env (local dev fallback — no Key Vault)**
+```env
+# Leave AZURE_KEYVAULT_URL unset and use API_KEYS instead
+API_KEYS=your-64-char-hex-key-here
+```
 
+Generate a new key:
 ```bash
 # Python
 python -c "import secrets; print(secrets.token_hex(32))"
@@ -72,7 +116,12 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 **curl**
 ```bash
-curl -H "X-API-Key: 2a9785e01fe42f8f78773b0c0710e2bd3155b8dd73bcfd6ef26eea0bd140d52a" \
+# Admin key
+curl -H "X-API-Key: a88b5efd53c98b9d3838e2a14273dac5d36bdeeec8a9024f31a0335f3e046394" \
+     http://localhost:8000/api/orders/
+
+# Mobile key
+curl -H "X-API-Key: ff1f807fe7448ba947bed382b7d5bab5b254819b20afec63f7b7d17260cd6b10" \
      http://localhost:8000/api/orders/
 ```
 
@@ -84,7 +133,7 @@ automatically via the collection-level `Authorization → API Key` setting.
 ```python
 import requests
 
-HEADERS = {"X-API-Key": "2a9785e01fe42f8f78773b0c0710e2bd3155b8dd73bcfd6ef26eea0bd140d52a"}
+HEADERS = {"X-API-Key": "a88b5efd53c98b9d3838e2a14273dac5d36bdeeec8a9024f31a0335f3e046394"}
 
 orders = requests.get("http://localhost:8000/api/orders/", headers=HEADERS).json()
 ```
@@ -118,13 +167,65 @@ const orders = await fetch("/api/orders/", { headers }).then(r => r.json());
 
 Note: both cases return the same message intentionally — revealing which check failed would assist attackers in probing the API.
 
-### Rotating a key
+### Key Vault — managing keys
 
-1. Generate a new key (`secrets.token_hex(32)`).
-2. Add it to `API_KEYS` in `.env` alongside the old one.
-3. Restart the API.
-4. Give the new key to the affected client.
-5. Once the client confirms they are using the new key, remove the old key from `.env` and restart.
+**Add a new client key**
+```bash
+# Generate key
+NEW_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+
+# Store in Key Vault (replace 'partner1' with the client name)
+az keyvault secret set \
+  --vault-name kv-foodorders-dev \
+  --name "api-key-partner1" \
+  --value "$NEW_KEY"
+
+# Restart the API to pick up the new key
+# (keys are cached in memory — restart is required)
+```
+
+**Revoke a client key (disable immediately)**
+```bash
+# Disable the secret — the key stops working on next API restart
+az keyvault secret set-attributes \
+  --vault-name kv-foodorders-dev \
+  --name "api-key-client2" \
+  --enabled false
+
+# Restart the API to clear the cached key set
+```
+
+**Delete a key permanently**
+```bash
+az keyvault secret delete --vault-name kv-foodorders-dev --name "api-key-client2"
+# Soft-delete holds it for 90 days; to purge immediately:
+az keyvault secret purge --vault-name kv-foodorders-dev --name "api-key-client2"
+```
+
+**Rotate a key (zero-downtime)**
+```bash
+# 1. Generate a new key
+NEW_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+
+# 2. Update the secret value (old value is saved as a previous version in Key Vault)
+az keyvault secret set --vault-name kv-foodorders-dev --name "api-key-mobile" --value "$NEW_KEY"
+
+# 3. Share the new key with the client
+
+# 4. Restart the API — new key becomes active, old one is retired
+```
+
+**List all current keys**
+```bash
+az keyvault secret list \
+  --vault-name kv-foodorders-dev \
+  --query "[?starts_with(name,'api-key-')].{Client:name, Enabled:attributes.enabled}" \
+  -o table
+```
+
+**View Key Vault secrets in Azure Portal**
+
+`portal.azure.com → Resource Groups → rg-foodorders-dev → kv-foodorders-dev → Secrets`
 
 ### Limitations
 

@@ -23,9 +23,11 @@ class Settings(BaseSettings):
     storage_image_container: str = "item-images"
 
     # Authentication — Option 1: API Keys
-    # Comma-separated list of valid keys. App refuses to start if unset.
-    # Generate a key: python -c "import secrets; print(secrets.token_hex(32))"
-    api_keys: str
+    # Production: set AZURE_KEYVAULT_URL — keys are fetched from Key Vault secrets
+    #             named api-key-<client> (e.g. api-key-admin, api-key-mobile).
+    # Local dev:  leave AZURE_KEYVAULT_URL empty and set API_KEYS instead.
+    azure_keyvault_url: str = ""
+    api_keys: str = ""   # fallback for local dev when azure_keyvault_url is not set
 
     model_config = {"env_file": ".env"}
 
