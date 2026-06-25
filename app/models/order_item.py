@@ -26,8 +26,9 @@ class OrderItemCreate(BaseModel):
     carbohydrates: float = Field(..., ge=0, examples=[20.0])
     fat: float = Field(..., ge=0, examples=[15.0])
     allergies: List[str] = Field(default=[], examples=[["Milk", "Egg"]])
-    # Set automatically by the image upload endpoint — not supplied by callers on create
-    imageUrl: Optional[str] = Field(default=None, description="Public blob URL, set via the /image endpoints")
+    # Internal blob path set by the image upload endpoint — not supplied by callers on create.
+    # Blob storage is private; retrieve the image via GET /{itemId}/image.
+    imageUrl: Optional[str] = Field(default=None, description="Internal blob path. Fetch via GET /api/orders/{orderId}/items/{itemId}/image — storage is private.")
 
 
 class ImageFileUpload(BaseModel):

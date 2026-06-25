@@ -360,8 +360,54 @@
     },
     {
       "name": "Item Images",
-      "description": "Upload and remove images for food items (Pizza, Burgers, etc.).\n\nImages are stored in Azure Blob Storage (container: item-images, public read).\nThe public URL is written back into the item document's `imageUrl` field.\n\nTwo upload methods:\n  • File upload  — multipart/form-data, field key: `file`\n  • Base64 upload — JSON body with `image_base64` and `filename`\n\nMax size: 8 MB. Accepted formats: JPEG, PNG.\nReplacing an image automatically deletes the previous blob.",
+      "description": "Upload, retrieve, and remove images for food items (Pizza, Burgers, etc.).\n\nBlob storage is PRIVATE — no direct storage URL is ever returned.\nAll image traffic is proxied through GET /{itemId}/image.\n\nTwo upload methods:\n  • File upload  — multipart/form-data, field key: `file`\n  • Base64 upload — JSON body with `image_base64` and `filename`\n\nUpload responses return the API serve path, not a blob URL.\nMax size: 8 MB. Accepted formats: JPEG, PNG.\nReplacing an image automatically deletes the previous blob.",
       "item": [
+        {
+          "name": "Get Image (serve via API)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is image', () => {",
+                  "    const ct = pm.response.headers.get('Content-Type');",
+                  "    pm.expect(ct).to.match(/image\\/(jpeg|png)/);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/orders/{{orderId}}/items/{{itemId}}/image",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "orders", "{{orderId}}", "items", "{{itemId}}", "image"]
+            },
+            "description": "Retrieve the item's image. The API proxies the bytes from private Azure Blob Storage — no direct storage URL is ever exposed.\n\nReturns raw image bytes with the correct Content-Type header (image/jpeg or image/png).\n\nIn Postman, click the response body's **Visualize** tab or save via **Save Response → Save to a file** to view the image.\n\nReturns 404 if the item has no image or the blob is missing from storage."
+          },
+          "response": [
+            {
+              "name": "200 OK — image bytes",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "image/jpeg" }],
+              "body": "<binary image bytes>",
+              "_postman_previewlanguage": "text"
+            },
+            {
+              "name": "404 Not Found — no image",
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": {\n    \"message\": \"Item 'ITEM-20101' has no image\"\n  }\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ]
+        },
         {
           "name": "Upload Image — File (multipart)",
           "event": [
@@ -409,7 +455,7 @@
               "status": "OK",
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/a3f9c1b2d4e5-pepperoni-pizza.jpg\",\n  \"format\": \"file\"\n}",
+              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"/api/orders/ORD-10101/items/ITEM-20101/image\",\n  \"format\": \"file\"\n}",
               "_postman_previewlanguage": "json"
             },
             {
@@ -477,7 +523,7 @@
               "status": "OK",
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/7e2a9f13b8c4-pizza-thumbnail.png\",\n  \"format\": \"base64\"\n}",
+              "body": "{\n  \"itemId\": \"ITEM-20101\",\n  \"imageUrl\": \"/api/orders/ORD-10101/items/ITEM-20101/image\",\n  \"format\": \"base64\"\n}",
               "_postman_previewlanguage": "json"
             },
             {

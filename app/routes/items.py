@@ -133,6 +133,56 @@ def delete_item(
 
 
 # ── Image endpoints ───────────────────────────────────────────────────────────
+# Blob container is PRIVATE — no direct storage URL is ever returned to callers.
+# Uploads store the internal blob path in Cosmos. The GET endpoint below proxies
+# the bytes through the API so the only way to retrieve an image is via this API.
+
+
+def _image_serve_path(order_id: str, item_id: str) -> str:
+    return f"/api/orders/{order_id}/items/{item_id}/image"
+
+
+@router.get(
+    "/{item_id}/image",
+    summary="Serve item image — proxied through the API",
+    tags=["Item Images"],
+)
+def get_item_image(
+    order_id: str,
+    item_id: str,
+    cosmos: CosmosService = Depends(get_cosmos_service),
+    blob: BlobService = Depends(get_blob_service),
+) -> Response:
+    """
+    Stream the item's image bytes directly through the API.
+
+    The image is stored in a **private** Azure Blob Storage container and is
+    never accessible via a direct storage URL. All image traffic passes through
+    this endpoint so access control can be enforced at the application layer.
+
+    Returns the raw image bytes with the correct `Content-Type` header
+    (`image/jpeg` or `image/png`).
+    """
+    item = cosmos.get_item(order_id, item_id)
+    if item is None:
+        raise _item_404(order_id, item_id)
+
+    blob_path = item.get("imageUrl")
+    if not blob_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": f"Item '{item_id}' has no image"},
+        )
+
+    try:
+        image_bytes, content_type = blob.download_image(blob_path)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Image blob not found in storage"},
+        )
+
+    return Response(content=image_bytes, media_type=content_type)
 
 
 @router.put(
@@ -150,9 +200,10 @@ async def upload_image_file(
     """
     Upload a JPG or PNG image for this item via **multipart/form-data**.
 
-    - Replaces any previously stored image (old blob is deleted automatically)
-    - Stores the public URL in the `imageUrl` field of the item document
-    - Returns the new `imageUrl` alongside the `itemId`
+    - Image is stored in a **private** blob container — no public URL is created
+    - The returned `imageUrl` is the API path to retrieve the image:
+      `/api/orders/{orderId}/items/{itemId}/image`
+    - Replaces any previously stored image (old blob deleted automatically)
 
     **Postman tip:** Body → form-data → key `file` (type = File)
     """
@@ -160,7 +211,6 @@ async def upload_image_file(
     if item is None:
         raise _item_404(order_id, item_id)
 
-    # Validate content type
     if file.content_type not in _ALLOWED_MIME:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -169,17 +219,16 @@ async def upload_image_file(
 
     file_bytes = await file.read()
 
-    # Remove old blob if one exists
     if item.get("imageUrl"):
         blob.delete_image(item["imageUrl"])
 
     try:
-        image_url = blob.upload_file(item_id, file_bytes, file.filename or "image.jpg")
+        blob_path = blob.upload_file(item_id, file_bytes, file.filename or "image.jpg")
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": str(exc)})
 
-    cosmos.update_item(order_id, item_id, {"imageUrl": image_url})
-    return ImageFileUpload(itemId=item_id, imageUrl=image_url, format="file")
+    cosmos.update_item(order_id, item_id, {"imageUrl": blob_path})
+    return ImageFileUpload(itemId=item_id, imageUrl=_image_serve_path(order_id, item_id), format="file")
 
 
 @router.put(
@@ -205,23 +254,22 @@ def upload_image_base64(
     ```
 
     A `data:image/...;base64,` prefix is accepted but not required.
-    Replaces any previously stored image.
+    Image is stored privately; the returned `imageUrl` is the API serve path.
     """
     item = cosmos.get_item(order_id, item_id)
     if item is None:
         raise _item_404(order_id, item_id)
 
-    # Remove old blob if one exists
     if item.get("imageUrl"):
         blob.delete_image(item["imageUrl"])
 
     try:
-        image_url = blob.upload_base64(item_id, payload.image_base64, payload.filename)
+        blob_path = blob.upload_base64(item_id, payload.image_base64, payload.filename)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"message": str(exc)})
 
-    cosmos.update_item(order_id, item_id, {"imageUrl": image_url})
-    return ImageFileUpload(itemId=item_id, imageUrl=image_url, format="base64")
+    cosmos.update_item(order_id, item_id, {"imageUrl": blob_path})
+    return ImageFileUpload(itemId=item_id, imageUrl=_image_serve_path(order_id, item_id), format="base64")
 
 
 @router.delete(

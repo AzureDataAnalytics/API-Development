@@ -345,16 +345,49 @@ No response body.
 
 ## Item Images
 
-Item images are stored in **Azure Blob Storage** (`item-images` container, public read access). The public URL is written back into the item document's `imageUrl` field so it can be served directly in a frontend or mobile app.
+Item images are stored in a **private** Azure Blob Storage container (`item-images`). Public internet access is disabled at both the storage account and container level — no blob URL is ever returned to callers. All image traffic is proxied through the API via the `GET /{itemId}/image` endpoint, which means access control stays in the application layer.
 
 | Property | Value |
 |----------|-------|
 | Supported formats | JPEG, PNG (`.jpg` `.jpeg` `.png`) |
 | Max file size | 8 MB |
-| Blob URL pattern | `https://foodordersfwtgqe.blob.core.windows.net/item-images/{itemId}/{uuid}-{filename}` |
+| Cosmos `imageUrl` field | Internal blob path (e.g. `ITEM-20101/uuid-pizza.jpg`) — never a public URL |
+| API serve path | `GET /api/orders/{orderId}/items/{itemId}/image` |
 | Old image on replace | Automatically deleted before the new one is stored |
 
 Two upload methods are available — multipart file upload (ideal from a browser or Postman) and base64 JSON (ideal from mobile apps or when the image is already encoded).
+
+---
+
+### GET /api/orders/{orderId}/items/{itemId}/image — Serve Image
+
+Retrieve an item's image. The API downloads the blob from private storage and streams the bytes directly to the caller — no storage URL is ever exposed.
+
+**Request**
+```http
+GET /api/orders/ORD-10101/items/ITEM-20101/image
+```
+
+**Response — 200 OK**
+
+Raw image bytes with the correct `Content-Type` header (`image/jpeg` or `image/png`).
+
+**curl example**
+```bash
+# Save to file
+curl -o pizza.jpg "http://localhost:8000/api/orders/ORD-10101/items/ITEM-20101/image"
+
+# Display inline (macOS)
+curl -s "http://localhost:8000/api/orders/ORD-10101/items/ITEM-20101/image" | open -f -a Preview
+```
+
+**Error Responses**
+
+| Status | Reason |
+|--------|--------|
+| 404 | Order or item not found |
+| 404 | Item exists but has no image uploaded |
+| 404 | Blob missing from storage (stale reference) |
 
 ---
 
@@ -377,10 +410,13 @@ Content-Type: image/jpeg
 ```
 
 **Response — 200 OK**
+
+The `imageUrl` returned is the **API serve path**, not a storage URL. Use it with `GET` to retrieve the image.
+
 ```json
 {
   "itemId": "ITEM-20101",
-  "imageUrl": "https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/a3f9c1b2d4e5-pepperoni-pizza.jpg",
+  "imageUrl": "/api/orders/ORD-10101/items/ITEM-20101/image",
   "format": "file"
 }
 ```
@@ -444,7 +480,7 @@ Content-Type: application/json
 ```json
 {
   "itemId": "ITEM-20101",
-  "imageUrl": "https://foodordersfwtgqe.blob.core.windows.net/item-images/ITEM-20101/7e2a9f13b8c4-pizza-thumbnail.png",
+  "imageUrl": "/api/orders/ORD-10101/items/ITEM-20101/image",
   "format": "base64"
 }
 ```
